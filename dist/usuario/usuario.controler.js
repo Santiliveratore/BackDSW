@@ -1,0 +1,94 @@
+import { orm } from '../shared/db/orm.js';
+import bcrypt from 'bcrypt';
+import { Usuario } from './usuario.entity.js';
+import jwt from 'jsonwebtoken';
+const em = orm.em;
+async function findAll(req, res) {
+    try {
+        const usuarios = await em.find(Usuario, {});
+        res.status(200).json({ message: 'find all usuarios', data: usuarios });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+async function findOne(req, res) {
+    try {
+        const id = Number.parseInt(req.params.id);
+        const usuario = await em.findOneOrFail(Usuario, { id });
+        res.status(200).json({ message: 'usuario encontrado', data: usuario });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+// Método para agregar un usuario
+async function add(req, res) {
+    try {
+        const { email, contraseña, ...resto } = req.body;
+        // Verificar si el email ya está en uso
+        const usuarioExistente = await em.findOne(Usuario, { email });
+        if (usuarioExistente) {
+            return res.status(400).json({ message: 'El correo electrónico ya está en uso' });
+        }
+        // Hashear la contraseña antes de guardarla
+        const saltRounds = 10; // Número de rondas para generar el salt
+        const contraseñaHasheada = await bcrypt.hash(contraseña, saltRounds);
+        // Crear el nuevo usuario con la contraseña hasheada
+        const usuario = em.create(Usuario, { ...resto, email, contraseña: contraseñaHasheada });
+        await em.flush();
+        res.status(201).json({ message: 'Usuario creado', data: { id: usuario.id, email: usuario.email } });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+async function update(req, res) {
+    try {
+        const id = Number.parseInt(req.params.id);
+        const usuario = em.getReference(Usuario, id);
+        em.assign(usuario, req.body);
+        await em.flush();
+        res.status(200).json({ message: 'usuario actualizado' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+async function remove(req, res) {
+    try {
+        const id = Number.parseInt(req.params.id);
+        const usuario = em.getReference(Usuario, id);
+        await em.removeAndFlush(usuario);
+        res.status(204).send({ message: 'usuario eliminado' });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+async function login(req, res) {
+    try {
+        const { email, contraseña } = req.body;
+        // Buscar el usuario en la base de datos usando el email
+        const usuario = await em.findOne(Usuario, { email });
+        if (!usuario) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+        // Comparar la contraseña ingresada con la almacenada en la base de datos (hasheada)
+        const contraseñaValida = await bcrypt.compare(contraseña, usuario.contraseña);
+        if (!contraseñaValida) {
+            return res.status(401).json({ message: 'Contraseña incorrecta' });
+        }
+        // Generar un token de autenticación (JWT)
+        const token = jwt.sign({ id: usuario.id, email: usuario.email, nombre: usuario.nombre, apellido: usuario.apellido, rol: usuario.rol, localidad: usuario.localidad }, 'clave_secreta', // Usa una clave secreta fuerte en producción
+        { expiresIn: '1h' } // El token expira en 1 hora
+        );
+        // Devolver el token al frontend
+        res.status(200).json({ message: 'Login exitoso', token });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+export { findAll, findOne, add, update, remove, login };
+//# sourceMappingURL=usuario.controler.js.map
